@@ -1,7 +1,7 @@
 [project]
 name = "openfactory-aws"
 version = "0.0.1"
-description = "AWS add-on for OpenFactory: the Fargate remote-box runner (and, later, the DynamoDB metrics sink, S3 session store and SSM token-pool source)."
+description = "AWS add-on for OpenFactory: the Fargate remote-box runner, the DynamoDB metrics sink, the S3 session store and the SSM token-pool source."
 license = "Apache-2.0"
 requires-python = ">=3.12"
 # The runner imports boto3 lazily (only when a job actually launches on Fargate), but the
@@ -21,10 +21,16 @@ dependencies = [
 # only resolves here, which is what "the cloud is an add-on" means when it is measured.
 [project.entry-points."openfactory.adapters"]
 "box_runner.fargate" = "openfactory.runtime.fargate.launcher:build_fargate_runner"
-# PORT-TODO: the old sdlc-platform tree also shipped metrics.dynamodb, session_store.s3 and
-# token_pool.ssm in this package (see openfactory.plugins.SHIPS_IN). Only the Fargate runner was
-# ported; declare the others here once their implementations are ported, or the entry points would
-# name modules that do not exist.
+# The other three rows plugins.SHIPS_IN names for this package. Each resolves into a vendor path
+# in the `openfactory` namespace that the core never imports directly — only resolves here — which
+# is what "the cloud is an add-on" means: the core ships the free peer (file/env/sqlite) and these
+# join as rows through the entry-point group.
+"session_store.s3" = "openfactory.adapters.agent.s3_session_store:build_s3_session_store"
+"token_pool.ssm" = "openfactory.runtime.fargate.observe:build_ssm_token_pool"
+# metrics.dynamodb was RE-DERIVED from the core's documented contract (observability/metrics.py's
+# schema + the sqlite twin), not ported from old code that no longer existed — see the module
+# docstring. Its boto3 round-trip wants a real table (box prove / deploy) to earn trust.
+"metrics.dynamodb" = "openfactory.observability.dynamo:build_dynamo_metrics_sink"
 
 [tool.setuptools]
 packages = ["openfactory_aws"]

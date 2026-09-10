@@ -101,6 +101,10 @@ resource "aws_ecs_task_definition" "worker" {
         # ADR-0013: the pre-flight sizer runs the agent (read-only) ON THE WORKER — give it the
         # same planner model as a sandbox job so sizing is cheap (sonnet, not opus).
         { name = "OPENFACTORY_PLANNER_MODEL", value = var.planner_model },
+        # The cost dashboard's store. Setting this is what makes metrics_sink_kind() resolve to
+        # `dynamodb` (the add-on's row) instead of Null — the worker writes job summaries here and
+        # the panel reads the dashboard from it.
+        { name = "OPENFACTORY_METRICS_TABLE", value = aws_dynamodb_table.metrics.name },
       ]
       secrets = [
         { name = "TEMPORAL_API_KEY", valueFrom = data.aws_ssm_parameter.temporal_api_key.arn },

@@ -92,6 +92,19 @@ data "aws_iam_policy_document" "apprunner_instance" {
     actions   = ["kms:Decrypt"]
     resources = [data.aws_kms_alias.ssm.target_key_arn]
   }
+  statement {
+    # The panel reads the cost dashboard and the agents' memory from the metrics table, and serves
+    # the right-to-be-forgotten deletion (ForgettingSink) — same verbs the worker role gets.
+    sid = "MetricsReadWrite"
+    actions = [
+      "dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan",
+      "dynamodb:DeleteItem", "dynamodb:BatchWriteItem",
+    ]
+    resources = [
+      aws_dynamodb_table.metrics.arn,
+      "${aws_dynamodb_table.metrics.arn}/index/*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "apprunner_instance" {
@@ -137,6 +150,12 @@ resource "aws_apprunner_service" "panel" {
           OPENFACTORY_PROD_APPROVERS         = var.prod_approvers
           OPENFACTORY_PLANNER_MODEL          = var.planner_model
           OPENFACTORY_EXECUTOR_MODEL         = var.executor_model
+          # The cost dashboard's store — makes metrics_sink_kind() resolve to the add-on's
+          # `dynamodb` row so the panel reads the dashboard and the agents' memory from it.
+          OPENFACTORY_METRICS_TABLE          = aws_dynamodb_table.metrics.name
+          # The cockpit reports the pool the sandbox jobs run on — the SSM parameter (ReadSecretsAndPool
+          # above grants it), not the panel's own environment.
+          OPENFACTORY_TOKEN_POOL_SOURCE      = "ssm"
         }
         runtime_environment_secrets = {
           TEMPORAL_API_KEY        = data.aws_ssm_parameter.temporal_api_key.arn

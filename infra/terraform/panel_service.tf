@@ -90,6 +90,12 @@ resource "aws_ecs_task_definition" "panel" {
         { name = "OPENFACTORY_GH_APP_INSTALLATION_ID", value = var.bot_installation_id },
         { name = "OPENFACTORY_PANEL_TOKEN", value = var.panel_token },
         { name = "OPENFACTORY_PROD_APPROVERS", value = var.prod_approvers },
+        # The panel reads the cost dashboard and the agents' memory from here. Its task role is
+        # aws_iam_role.worker (above), which aws_iam_role_policy.worker_metrics already grants.
+        { name = "OPENFACTORY_METRICS_TABLE", value = aws_dynamodb_table.metrics.name },
+        # The cockpit reports the pool the sandbox jobs run on — the SSM parameter, not the panel's
+        # own environment. The worker role already reads that parameter (worker_execution_secrets).
+        { name = "OPENFACTORY_TOKEN_POOL_SOURCE", value = "ssm" },
       ]
       secrets = [
         { name = "TEMPORAL_API_KEY", valueFrom = data.aws_ssm_parameter.temporal_api_key.arn },
