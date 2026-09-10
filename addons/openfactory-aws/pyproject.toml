@@ -1,0 +1,34 @@
+[project]
+name = "openfactory-aws"
+version = "0.0.1"
+description = "AWS add-on for OpenFactory: the Fargate remote-box runner (and, later, the DynamoDB metrics sink, S3 session store and SSM token-pool source)."
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# The runner imports boto3 lazily (only when a job actually launches on Fargate), but the
+# deployment that installs this add-on is the one that runs on AWS, so it is a hard dependency
+# here. `openfactory` is the namespace the entry point below resolves into.
+dependencies = [
+    "openfactory",
+    "boto3>=1.34",
+]
+
+# WHERE THE AWS ROWS REGISTER (#106, ADR-0040 D3). The core DESCRIBES the `fargate` box as a pure
+# row of traits in `openfactory/adapters/sandbox/registry.py` (so a job in flight can ask about it
+# with no I/O) and ships NO runner; this package supplies the runner through the `box_runner.fargate`
+# entry point. `plugins.SHIPS_IN["box_runner.fargate"] == "openfactory-aws"` names this package, so a
+# refusal on a deployment that has not installed it can say which wheel to install. The runner code
+# lives at `openfactory.runtime.fargate.launcher` — a vendor path the core never imports directly,
+# only resolves here, which is what "the cloud is an add-on" means when it is measured.
+[project.entry-points."openfactory.adapters"]
+"box_runner.fargate" = "openfactory.runtime.fargate.launcher:build_fargate_runner"
+# PORT-TODO: the old sdlc-platform tree also shipped metrics.dynamodb, session_store.s3 and
+# token_pool.ssm in this package (see openfactory.plugins.SHIPS_IN). Only the Fargate runner was
+# ported; declare the others here once their implementations are ported, or the entry points would
+# name modules that do not exist.
+
+[tool.setuptools]
+packages = ["openfactory_aws"]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
