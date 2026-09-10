@@ -1,0 +1,92 @@
+# ========================================
+# OpenFactory — CD (EC2 + docker-compose)
+# ========================================
+# Mirrors the FluxForgeInc deploy pattern (flux-forge-routes): build on CI is skipped in
+# favour of build-on-host (the OpenFactory images are heavy — dotnet SDK + the agent toolbox —
+# so we git-pull on the EC2 host and `docker compose up -d --build` there, rather than pushing
+# multi-GB images through ECR on every deploy). Auth to the host is SSH, same as the org's
+# bootstrap workflows. OIDC is declared so a later step can reach ECR/SSM if you want it.
+#
+# REQUIRED REPO SECRETS (Settings → Secrets and variables → Actions):
+#   OPENFACTORY_HOST        the EC2 instance's public DNS/IP (Docker + compose installed on it)
+#   EC2_SSH_PRIVATE_KEY     a private key whose public half is in the host's authorized_keys
+#   (optional) AWS_ROLE_ARN the OIDC role to assume, if a step needs AWS (ECR/SSM) — same role
+#                           flux-forge-routes uses; its trust policy must allow THIS repo.
+#
+# ONE-TIME ON THE EC2 HOST (not done here):
+#   - Docker + docker compose installed; user `ec2-user` in the `docker` group.
+#   - The fork cloned at /home/ec2-user/openfactory-core  (git remote = this repo).
+#   - /home/ec2-user/openfactory-core/.env.compose present with the real secrets
+#     (OPENFACTORY_PANEL_TOKEN, the agent creds, GitHub token, models, etc.) — never in git.
+#   - Ports 8787 (panel) / 8081 (temporal UI) reachable per your security group.
+
+name: Deploy OpenFactory
+
+on:
+  push:
+    branches: [main]          # deploy when the fork's main advances
+  workflow_dispatch: {}        # or trigger manually
+
+concurrency:
+  group: deploy-openfactory
+  cancel-in-progress: false    # never interrupt an in-flight deploy
+
+permissions:
+  id-token: write              # OIDC, if an AWS step is added later
+  contents: read
+
+env:
+  DEPLOY_DIR: /home/ec2-user/openfactory-core
+
+jobs:
+  deploy:
+    name: Deploy to EC2 (docker-compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout (for the test gate)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Test gate (refuse to ship a red tree)
+        run: |
+          python -m pip install -e '.[dev]' >/dev/null
+          python -m pytest -q
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.OPENFACTORY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy (git pull + compose up) on the host
+        run: |
+          ssh -i ~/.ssh/deploy_key ec2-user@${{ secrets.OPENFACTORY_HOST }} bash -s << 'REMOTE'
+            set -euo pipefail
+            cd ${{ env.DEPLOY_DIR }}
+            echo "== pulling latest =="
+            git fetch origin main
+            git reset --hard origin/main
+            echo "== building + rolling the stack =="
+            docker compose --env-file .env.compose up -d --build
+            echo "== waiting for the panel =="
+            for i in $(seq 1 30); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8787/ || true)
+              [ "$code" != "000" ] && { echo "panel up (HTTP $code)"; break; }
+              sleep 4
+            done
+            docker compose ps
+          REMOTE
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### OpenFactory deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- host: \`${{ secrets.OPENFACTORY_HOST }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- dir: \`${{ env.DEPLOY_DIR }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- panel: http://<host>:8787  ·  temporal UI: http://<host>:8081" >> "$GITHUB_STEP_SUMMARY"
