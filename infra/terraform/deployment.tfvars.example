@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-DEPLOYMENT terraform values. Copy this to `deployment.tfvars` (gitignored),
+# fill in YOUR values, and point the deploy at it:
+#
+#     export OPENFACTORY_TFVARS=$PWD/infra/terraform/deployment.tfvars
+#     infra/deploy.sh
+#
+# Every value here identifies ONE deployment (one company, one AWS account, one
+# GitHub App, one Temporal namespace). The platform CODE never contains these —
+# they live only here + in that account's SSM (secrets). See docs/DEPLOYMENT.md.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AWS
+region = "eu-west-2"          # the region this deployment runs in
+prefix = "openfactory"               # names every resource (cluster "<prefix>-sandbox", service
+                              # "<prefix>-worker", ECR repos …). Change it to run TWO
+                              # deployments in the same account; then also set
+                              # OPENFACTORY_CLUSTER / OPENFACTORY_WORKER_SERVICE for deploy.sh.
+
+# GitHub App (create your OWN app + install it on your org — see the guide).
+# The App's PRIVATE KEY is a secret and does NOT go here — it goes in SSM
+# (/<prefix>/bot-app-private-key). Only the non-secret IDs live here.
+bot_app_id          = "REPLACE_ME"   # Settings → Developer settings → GitHub Apps → your app → "App ID"
+bot_installation_id = "REPLACE_ME"   # after installing the app on your org: the installation id
+bot_name            = "Your Co OpenFactory Bot"     # the git commit author name the bot uses
+bot_email           = "openfactory-bot@yourco.com"  # the commit author email
+
+# Temporal Cloud (create your OWN namespace — the API key goes in SSM /<prefix>/temporal-api-key)
+temporal_endpoint  = "your-namespace.acct.tmprl.cloud:7233"
+temporal_namespace = "your-namespace.acct"
+
+# Models (optional — '' = the Claude Code CLI default). Opus is the recommended default.
+planner_model  = "opus"   # only used when a project opts into a separate planner (ADR-0014)
+executor_model = "opus"
+
+# Optional notifications / alerts
+telegram_bot_token = ""    # push channel for terminal outcomes (empty = off)
+telegram_chat_id   = ""
+alert_email        = ""    # CloudWatch alarm email (empty = off)
